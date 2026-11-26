@@ -44,7 +44,7 @@ jobs:
 
     - name: Install the interface and description packages
       run: |
-        sudo dpkg -i ros2/ros-humble-kachaka-description_*.deb ros2/ros-humble-kachaka-interfaces_*.deb
+        sudo apt-get install -y ./ros2/ros-humble-kachaka-description_*.deb ./ros2/ros-humble-kachaka-interfaces_*.deb
 
     - name: Install the gRPC build tools
       run: |
