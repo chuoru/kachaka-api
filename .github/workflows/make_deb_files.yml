@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - qt_custom
+      - hotfix
 
 jobs:
   build:
@@ -41,6 +42,38 @@ jobs:
         bloom-generate rosdebian --ros-distro humble
         fakeroot debian/rules binary
 
+    - name: Install the interface and description packages
+      run: |
+        sudo dpkg -i ros2/ros-humble-kachaka-description_*.deb ros2/ros-humble-kachaka-interfaces_*.deb
+
+    - name: Install the gRPC build tools
+      run: |
+        sudo apt-get install -y --no-install-recommends           libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc nlohmann-json3-dev
+
+    - name: Generate the gRPC sources of the bridge
+      run: |
+        mkdir -p ros2/kachaka_grpc_ros2_bridge/gen-src
+        protoc -I protos           --grpc_out=ros2/kachaka_grpc_ros2_bridge/gen-src           --plugin=protoc-gen-grpc=$(which grpc_cpp_plugin)           --cpp_out=ros2/kachaka_grpc_ros2_bridge/gen-src           protos/kachaka-api.proto
+
+    - name: Resolve the Kachaka packages for bloom
+      run: |
+        cat > /tmp/kachaka-rosdep.yaml <<'EOF'
+        kachaka_interfaces:
+          ubuntu:
+            jammy: [ros-humble-kachaka-interfaces]
+        kachaka_description:
+          ubuntu:
+            jammy: [ros-humble-kachaka-description]
+        EOF
+        echo "yaml file:///tmp/kachaka-rosdep.yaml" | sudo tee /etc/ros/rosdep/sources.list.d/10-kachaka.list
+        rosdep update
+
+    - name: Build Debian package(3/3)
+      run: |
+        cd `pwd`/ros2/kachaka_grpc_ros2_bridge
+        bloom-generate rosdebian --ros-distro humble
+        fakeroot debian/rules binary
+
     - name: Verify deb files
       run: |
         find `pwd`/ros2/*.deb -maxdepth 1
@@ -61,12 +94,20 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
 
     steps:
     - name: Download artifact
       uses: actions/download-artifact@v4
       with:
         name: ros-humble-kachaka-pkgs
+
+    - name: Delete the previous release of this branch
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release delete "${{ github.ref_name }}" --repo "${{ github.repository }}" --cleanup-tag --yes || true
 
     - name: Create Release
       id: create_release
